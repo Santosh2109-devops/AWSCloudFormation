@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Basic EC2 Instances
+
+Parameter:
+  MyKeyName:
+    Description: Select the keyname from list
+    Type: AWS::EC2::KeyPair::KeyName
+  MyAvailabilityZone:
+    Description: Select the availability zone
+    Type: String
+    Default: us-east-2a
+    AllowedValues:
+      - us-east-2a
+      - us-east-2b
+      - us-east-2c
+  MyInstanceType:
+    Description: Select instance type
+    Type: AWS::SSM::Parameter::Value<String>
+  EnvironmentName:
+    Description: Select the environment
+    Default: dev
+    Type: String
+
+Mappings:
+  MyRegionMap:
+    us-east-2:
+      HVM64:  ami-01816d07b1128cd2d
+    us-east-1:
+      HVM64:  ami-01816d07b1128cd2d
+
+  MyEnvironmentMap:
+    dev:
+      instanceType: t2.micro
+    prod:
+      instanceType: t2.small
+
+Conditions:
+  CreateEIPforProd: !Equals [!Ref EnvironmentName, prod ]
+  CreateSGForDev: !Equals [ !Ref EnvironmentName, dev]
+
+Resources:
+  DevEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap
+        - MyRegionMap
+        - !Ref 'AWS::Region'
+        - HVM64
+      InstanceType: !Ref MyInstanceType
+      KeyName: !Ref MyKeyName
+      AvailabilityZone: !Ref MyAvailabilityZone
+      SecurityGroups: !If [CreateSGForDev,  [ !Ref  DevSecurityGroup],  !Ref 'AWS::NoValue']
+      # SecurityGroups:
+      #   - default
+      #   - Ref: SSHSecurityGroup
+
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: new SSH Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          CidrIp: 0.0.0.0/0
+
+  DevEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateEIPforProd
+    Properties:
+      InstanceId: !Ref DevEC2Instance
+
+  DevSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition:
+    Properties:
+      GroupDescription: new Dev Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+
+Outputs:
+  MyInstanceId:
+    Description: My Instance Id
+    Value: !Ref DevEC2Instance
+  MyDnsName:
+    Description: Public DNS Name
+    Value:  !GetAtt DevEC2Instance.PublicDnsName
+  MyInstanceAvailabilityZone:
+    Description: Availabitiy zone of resource
+    Value: !GetAtt DevEC2Instance.AvailabilityZone
+    Export:
+      Name: !Sub "${AWS::StackName}-InstanceAz"
+      #It will create in export fields and cross stack can use this value as reference
+      #using !ImportValue ExportName
